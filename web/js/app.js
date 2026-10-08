@@ -588,8 +588,52 @@ function defaultImportForm() {
     amount: '',
     categoryId: (expCats[0] || {}).id || '',
     accountId: recent || (accs[0] ? accs[0].id : ''),
+    toAccountId: '',
     note: ''
   };
+}
+
+/** 检查一条待入账记录填全了没，返回没填好的原因（填好了返回空串） */
+/**
+ * 切成「账户划拨」时，猜转入账户：
+ * 截图里常常会写上对方账户名（比如备注认出来是「微信余额」），
+ * 那就优先选它；猜不到再随便挑一个跟转出账户不同的。
+ */
+function guessTransferTarget(item) {
+  const accs = (S.accounts || []).filter(a => !a.archived && a.id !== item.form.accountId);
+  if (!accs.length) return '';
+  const note = normalizeOcr(item.form.note || '').replace(/\s+/g, '');
+  if (note) {
+    const byNote = accs.find(a => {
+      const n = normalizeOcr(a.name).replace(/\s+/g, '');
+      return n.length >= 2 && note.indexOf(n) >= 0;
+    });
+    if (byNote) return byNote.id;
+  }
+  const raw = normalizeOcr(item.rawText || '').replace(/\s+/g, '');
+  if (raw) {
+    const byRaw = accs.find(a => {
+      const n = normalizeOcr(a.name).replace(/\s+/g, '');
+      return n.length >= 2 && raw.indexOf(n) >= 0;
+    });
+    if (byRaw) return byRaw.id;
+  }
+  return accs[0].id;
+}
+
+function importIssue(f) {
+  if (f.type === 'transfer') {
+    if (!(parseMoney(f.amount) > 0)) return '没填金额';
+    if (!f.date) return '没填日期';
+    if (!f.accountId) return '没选转出账户';
+    if (!f.toAccountId) return '没选转入账户';
+    if (f.toAccountId === f.accountId) return '转出和转入不能是同一个账户';
+    return '';
+  }
+  if (!(parseMoney(f.amount) > 0)) return '没填金额';
+  if (!f.date) return '没填日期';
+  if (!f.accountId) return '没选账户';
+  return '';
 }
 
 function viewImport() {
@@ -706,14 +750,20 @@ async function loadOcrStatus() {
 function importCardHtml(item) {
   const f = item.form;
   const st = importStatusOf(item);
+  const isTransfer = f.type === 'transfer';
   const cats = categoriesOf(f.type);
   const warnings = (item.warnings || []).slice();
   const dup = findDuplicate(item);
+  const issue = importIssue(f);
 
   const catOpts = cats.map(c => '<option value="' + esc(c.id) + '"' + (c.id === f.categoryId ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('');
   const accOpts = (S.accounts || []).filter(a => !a.archived || a.id === f.accountId)
     .map(a => '<option value="' + esc(a.id) + '"' + (a.id === f.accountId ? ' selected' : '') + '>' +
       esc(poolById(a.pool).name + ' · ' + a.name) + '</option>').join('');
+  const toAccOpts = '<option value="">请选择转入账户</option>' +
+    (S.accounts || []).filter(a => !a.archived || a.id === f.toAccountId)
+      .map(a => '<option value="' + esc(a.id) + '"' + (a.id === f.toAccountId ? ' selected' : '') + '>' +
+        esc(poolById(a.pool).name + ' · ' + a.name) + '</option>').join('');
 
   const rawBlock = item.rawText
     ? '<details class="imp-raw"><summary>看识别到的原文</summary><pre>' + esc(item.rawText) + '</pre></details>'
@@ -734,18 +784,24 @@ function importCardHtml(item) {
         '</span>' +
       '</div>' +
       (warnings.length ? '<div class="imp-warn">' + warnings.map(esc).join(' · ') + '</div>' : '') +
+      (issue && item.form.include ? '<div class="imp-warn">' + esc(issue) + '</div>' : '') +
       (dup === 'ledger' ? '<div class="imp-warn dup">账本里已经有一笔一样的（同日期同金额同账户），可能是重复截图</div>' : '') +
       (dup === 'batch' ? '<div class="imp-warn dup">这次导入里还有一张一模一样的，可能是重复拍了</div>' : '') +
       (item.status === 'error' ? '<div class="imp-warn">' + esc(item.error || '识别失败') + '，可以手动填写下面几项</div>' : '') +
       '<div class="imp-fields">' +
-        '<label class="mini"><span>类型</span><select data-imp="type" data-id="' + esc(item.id) + '">' +
+        '<label class="mini imp-type"><span>类型</span><select data-imp="type" data-id="' + esc(item.id) + '">' +
           '<option value="expense"' + (f.type === 'expense' ? ' selected' : '') + '>支出</option>' +
           '<option value="income"' + (f.type === 'income' ? ' selected' : '') + '>收入</option>' +
+          '<option value="transfer"' + (f.type === 'transfer' ? ' selected' : '') + '>账户划拨</option>' +
         '</select></label>' +
-        '<label class="mini"><span>日期</span><input type="date" data-imp="date" data-id="' + esc(item.id) + '" value="' + esc(f.date) + '"></label>' +
-        '<label class="mini"><span>金额</span><input type="text" inputmode="decimal" placeholder="0.00" data-imp="amount" data-id="' + esc(item.id) + '" value="' + esc(f.amount) + '"></label>' +
-        '<label class="mini"><span>分类</span><select data-imp="categoryId" data-id="' + esc(item.id) + '">' + catOpts + '</select></label>' +
-        '<label class="mini wide"><span>账户</span><select data-imp="accountId" data-id="' + esc(item.id) + '">' + accOpts + '</select></label>' +
+        '<label class="mini imp-date"><span>日期</span><input type="date" data-imp="date" data-id="' + esc(item.id) + '" value="' + esc(f.date) + '"></label>' +
+        '<label class="mini imp-amount"><span>金额</span><input type="text" inputmode="decimal" placeholder="0.00" data-imp="amount" data-id="' + esc(item.id) + '" value="' + esc(f.amount) + '"></label>' +
+        (isTransfer ? '' :
+          '<label class="mini imp-cat"><span>分类</span><select data-imp="categoryId" data-id="' + esc(item.id) + '">' + catOpts + '</select></label>') +
+        '<label class="mini wide"><span>' + (isTransfer ? '从哪个账户转出' : '账户') + '</span><select data-imp="accountId" data-id="' + esc(item.id) + '">' + accOpts + '</select></label>' +
+        (isTransfer
+          ? '<label class="mini wide"><span>转到哪个账户</span><select data-imp="toAccountId" data-id="' + esc(item.id) + '">' + toAccOpts + '</select></label>'
+          : '') +
         '<label class="mini wide2"><span>备注</span><input type="text" data-imp="note" data-id="' + esc(item.id) + '" value="' + esc(f.note) + '" placeholder="商户 / 用途"></label>' +
       '</div>' +
       rawBlock +
@@ -756,15 +812,19 @@ function importCardHtml(item) {
 function findDuplicate(item) {
   const amount = parseMoney(item.form.amount);
   if (!amount || amount <= 0 || !item.form.date) return false;
+  const isTransfer = item.form.type === 'transfer';
+  const same = o => o.date === item.form.date && o.amount === amount && o.type === item.form.type &&
+    o.accountId === item.form.accountId &&
+    (!isTransfer || o.toAccountId === item.form.toAccountId);
   const inLedger = (S.transactions || []).some(t =>
-    t.date === item.form.date && t.amount === amount && t.type === item.form.type &&
-    t.accountId === item.form.accountId);
+    same({ date: t.date, amount: t.amount, type: t.type, accountId: t.accountId, toAccountId: t.toAccountId }));
   if (inLedger) return 'ledger';
   const inBatch = ui.importItems.some(x =>
     x.id !== item.id && x.form.include &&
-    x.form.date === item.form.date && x.form.type === item.form.type &&
-    x.form.accountId === item.form.accountId &&
-    parseMoney(x.form.amount) === amount);
+    same({
+      date: x.form.date, amount: parseMoney(x.form.amount), type: x.form.type,
+      accountId: x.form.accountId, toAccountId: x.form.toAccountId
+    }));
   return inBatch ? 'batch' : false;
 }
 
@@ -816,13 +876,14 @@ function updateImportSummary() {
     return;
   }
 
-  let income = 0, expense = 0, ready = 0, bad = 0;
+  let income = 0, expense = 0, transferSum = 0, transferCount = 0, ready = 0, bad = 0;
   included.forEach(i => {
     const amount = parseMoney(i.form.amount);
-    const ok = amount > 0 && i.form.date && i.form.accountId;
-    if (ok) {
+    if (!importIssue(i.form)) {
       ready++;
-      if (i.form.type === 'income') income += amount; else expense += amount;
+      if (i.form.type === 'income') income += amount;
+      else if (i.form.type === 'transfer') { transferSum += amount; transferCount++; }
+      else expense += amount;
     } else {
       bad++;
     }
@@ -834,13 +895,19 @@ function updateImportSummary() {
     '<div class="ms"><span>本次计入</span><b>' + included.length + ' 笔</b></div>' +
     '<div class="ms"><span>支出合计</span><b class="down">' + fmtMoney(expense) + '</b></div>' +
     '<div class="ms"><span>收入合计</span><b class="up">' + fmtMoney(income) + '</b></div>' +
+    (transferCount ? '<div class="ms"><span>账户划拨</span><b class="mid">' + fmtMoney(transferSum) + '</b></div>' : '') +
   '</section>';
 
   let leftText;
   if (!included.length) leftText = '<span class="muted">没有勾选任何记录</span>';
-  else if (bad) leftText = '<span class="if-bad">有 ' + bad + ' 笔还没填完整（日期 / 金额 / 账户）</span>';
+  else if (bad) {
+    const firstBad = included.find(i => !!importIssue(i.form));
+    const why = firstBad ? importIssue(firstBad.form) : '有内容没填完整';
+    leftText = '<span class="if-bad">有 ' + bad + ' 笔还没填好：' + esc(why) + '（已经标在对应那张上）</span>';
+  }
   else leftText = '<span class="muted">' + (ready === 1 ? '这一笔填好了' : ready + ' 笔都填好了') +
-    '，合计净额 ' + fmtMoney(income - expense, { sign: income - expense > 0 }) + '</span>';
+    '，合计净额 ' + fmtMoney(income - expense, { sign: income - expense > 0 }) +
+    (transferCount ? '（另有 ' + transferCount + ' 笔划拨，不计入收支）' : '') + '</span>';
 
   const dateList = included.map(i => i.form.date).filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
   const range = dateList.length
@@ -1072,7 +1139,7 @@ async function submitImport() {
   const items = ui.importItems.filter(i => i.form.include);
   if (!items.length) { toast('没有勾选任何记录', 'error'); return; }
 
-  const bad = items.filter(i => !(parseMoney(i.form.amount) > 0) || !i.form.date || !i.form.accountId);
+  const bad = items.filter(i => !!importIssue(i.form));
   if (bad.length) {
     toast('有 ' + bad.length + ' 笔还没填完整，已经标出来了', 'error');
     const el = document.querySelector('.imp-card[data-id="' + bad[0].id + '"]');
@@ -1085,6 +1152,7 @@ async function submitImport() {
     date: i.form.date,
     amount: parseMoney(i.form.amount),
     accountId: i.form.accountId,
+    toAccountId: i.form.type === 'transfer' ? (i.form.toAccountId || null) : null,
     categoryId: i.form.categoryId || null,
     note: i.form.note || ''
   }));
@@ -1146,6 +1214,10 @@ function handleImportInput(el, rerender) {
   if (field === 'type') {
     const cats = categoriesOf(value);
     if (!cats.some(c => c.id === item.form.categoryId)) item.form.categoryId = (cats[0] || {}).id || '';
+    // 切到划拨时，如果还没选转入账户，先替它挑一个不同的账户
+    if (value === 'transfer' && !item.form.toAccountId) {
+      item.form.toAccountId = guessTransferTarget(item);
+    }
     updateImportCard(id);
     return;
   }
@@ -1153,7 +1225,13 @@ function handleImportInput(el, rerender) {
     const card = document.querySelector('.imp-card[data-id="' + id + '"]');
     if (card) card.classList.toggle('off', !value);
   }
-  updateImportSummary();
+  // 选账户/日期/勾选这类改动要立刻重画卡片，好把"没填对"的原因显示出来；
+  // 文本框（金额、备注）不重画，否则打字时焦点会丢。
+  if (el.tagName === 'SELECT' || el.type === 'date' || el.type === 'checkbox') {
+    updateImportCard(id);
+  } else {
+    updateImportSummary();
+  }
 }
 
 function applyBulk(field, srcId) {
@@ -1163,6 +1241,8 @@ function applyBulk(field, srcId) {
   let n = 0;
   ui.importItems.forEach(i => {
     if (!i.form.include) return;
+    // 划拨有「转出/转入」两个账户，统一设置账户没有意义，跳过
+    if (i.form.type === 'transfer') return;
     if (field === 'categoryId') {
       const cats = categoriesOf(i.form.type);
       if (!cats.some(c => c.id === value)) return;
