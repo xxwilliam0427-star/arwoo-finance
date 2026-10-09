@@ -143,10 +143,16 @@ function goalById(id) { return (S.goals || []).find(g => g.id === id) || null; }
 function categoriesOf(kind) { return (S.categories || []).filter(c => c.kind === kind); }
 function goalsOf(poolId) { return (S.goals || []).filter(g => g.status !== 'done' || true); }
 function accountsOfPool(poolId, includeArchived) {
-  return (S.accounts || []).filter(a => a.pool === poolId && (includeArchived || !a.archived));
+  return (S.accounts || []).filter(a => accountInPool(a, poolId) && (includeArchived || !a.archived));
+}
+function accountInPool(acc, poolId) {
+  return !!acc && (acc.pool === poolId || (acc.poolLinks || []).some(link => link.pool === poolId));
+}
+function accountGoalId(acc) {
+  return acc.pool === 'goal' ? acc.goalId : ((acc.poolLinks || []).find(link => link.pool === 'goal') || {}).goalId;
 }
 function accountsOfGoal(goalId, includeArchived) {
-  return (S.accounts || []).filter(a => a.goalId === goalId && (includeArchived || !a.archived));
+  return (S.accounts || []).filter(a => accountGoalId(a) === goalId && (includeArchived || !a.archived));
 }
 
 /* ============================================================ 核心算法（全应用统一） */
@@ -271,7 +277,7 @@ function filterTransactions(f) {
     if (f.poolId && f.poolId !== 'all') {
       const a1 = accountById(t.accountId);
       const a2 = t.toAccountId ? accountById(t.toAccountId) : null;
-      const hit = (a1 && a1.pool === f.poolId) || (a2 && a2.pool === f.poolId);
+      const hit = accountInPool(a1, f.poolId) || accountInPool(a2, f.poolId);
       if (!hit) return false;
     }
     if (q) {
@@ -294,7 +300,7 @@ function txBelongsTo(t, filter) {
   }
   const a1 = accountById(t.accountId);
   const a2 = t.toAccountId ? accountById(t.toAccountId) : null;
-  return (a1 && a1.pool === filter.poolId) || (a2 && a2.pool === filter.poolId);
+  return accountInPool(a1, filter.poolId) || accountInPool(a2, filter.poolId);
 }
 
 function monthSummary(monthKey, filter) {
@@ -339,7 +345,7 @@ function monthlyFlowSeries(n, endKey, filter) {
 function assetSeries(n, endKey, filter) {
   const accounts = (S.accounts || []).filter(a => {
     if (a.archived) return false;
-    if (filter && filter.poolId && filter.poolId !== 'all') return a.pool === filter.poolId;
+    if (filter && filter.poolId && filter.poolId !== 'all') return accountInPool(a, filter.poolId);
     return true;
   }).filter(a => {
     if (filter && filter.accountId && filter.accountId !== 'all') return a.id === filter.accountId;

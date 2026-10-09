@@ -364,7 +364,7 @@ function viewAccounts() {
   const t = todayIso();
   const total = totalAssets();
   let html = '<div class="toolbar">' +
-    '<div class="tb-left"><h2 class="page-title">账户</h2><span class="muted">每个账户属于一个池子，中短期池的账户还可以挂到具体目标下</span></div>' +
+    '<div class="tb-left"><h2 class="page-title">账户</h2><span class="muted">同一账户可加入多个池，余额共用，总资产只计算一次；各池金额可能重叠</span></div>' +
     '<div class="tb-right">' +
       '<button class="btn ghost" data-act="add-goal">＋ 新增目标</button>' +
       '<button class="btn primary" data-act="add-acc">＋ 新增账户</button>' +
@@ -380,6 +380,7 @@ function viewAccounts() {
       '<div class="card-head">' +
         '<h2>' + esc(p.name) + ' <span class="pool-sum">' + fmtMoney(poolSum) + '</span></h2>' +
         '<span class="muted">' + esc(p.desc) + ' · 占总资产 ' + (total > 0 ? (poolSum / total * 100).toFixed(1) : '0.0') + '%</span>' +
+        '<button class="btn ghost small" data-act="add-pool-acc" data-pool="' + p.id + '">＋ 添加账户</button>' +
       '</div>';
 
     if (p.id === 'goal') {
@@ -389,25 +390,25 @@ function viewAccounts() {
         html += '<div class="empty small"><p>还没有目标。先加一个吧，比如「旅游计划」。</p><button class="btn primary" data-act="add-goal">新增目标</button></div>';
       }
       goals.forEach(g => { html += goalCard(g, t); });
-      const orphans = accountsOfPool('goal', false).filter(a => !a.goalId);
+      const orphans = accountsOfPool('goal', false).filter(a => !accountGoalId(a));
       if (orphans.length) {
         html += '<div class="goal-block"><div class="goal-head"><div class="gh-left"><div class="gh-name">未归属目标的账户</div>' +
           '<div class="gh-sub">可以给它们指定一个目标</div></div></div><div class="acc-grid">' +
-          orphans.map(a => accountCard(a, t)).join('') + '</div></div>';
+          orphans.map(a => accountCard(a, t, p.id)).join('') + '</div></div>';
       }
       html += '</div>';
     } else {
       html += '<div class="acc-grid">';
       if (!poolAccounts.length) {
-        html += '<div class="empty small"><p>这个池子还没有账户。</p><button class="btn primary" data-act="add-acc" data-pool="' + p.id + '">添加一个</button></div>';
+        html += '<div class="empty small"><p>这个池子还没有账户。</p><button class="btn primary" data-act="add-pool-acc" data-pool="' + p.id + '">添加一个</button></div>';
       }
-      poolAccounts.forEach(a => { html += accountCard(a, t); });
+      poolAccounts.forEach(a => { html += accountCard(a, t, p.id); });
       html += '</div>';
     }
 
     if (archived.length) {
       html += '<details class="archived"><summary>已归档账户（' + archived.length + '）</summary>' +
-        '<div class="acc-grid">' + archived.map(a => accountCard(a, t)).join('') + '</div></details>';
+        '<div class="acc-grid">' + archived.map(a => accountCard(a, t, p.id)).join('') + '</div></details>';
     }
     html += '</section>';
   });
@@ -439,15 +440,15 @@ function goalCard(g, t) {
     progressBar(pr.ratio, pr.done ? '#27ae60' : '#f2994a') +
     '<div class="goal-foot">' + (pr.done ? '已经攒够啦 🎉' : '还差 ' + fmtMoney(pr.remaining)) + '</div>' +
     (pr.accounts.length
-      ? '<div class="acc-grid tight">' + pr.accounts.map(a => accountCard(a, t)).join('') + '</div>'
+      ? '<div class="acc-grid tight">' + pr.accounts.map(a => accountCard(a, t, 'goal')).join('') + '</div>'
       : '<div class="muted pad">这个目标下还没有账户，添加一个专门存钱的地方吧</div>') +
-    '<button class="btn ghost small" data-act="add-acc" data-pool="goal" data-goal="' + esc(g.id) + '">＋ 给这个目标添加账户</button>' +
+    '<button class="btn ghost small" data-act="add-pool-acc" data-pool="goal" data-goal="' + esc(g.id) + '">＋ 给这个目标添加账户</button>' +
   '</div>';
 }
 
-function accountCard(a, t) {
+function accountCard(a, t, poolId) {
   const st = accountStat(a, t);
-  let money = '<div class="acc-value">' + fmtMoney(st.value) + '</div>';
+  let money = '<div class="acc-value">' + fmtMoney(accountValue(a, t)) + '</div>';
   if (a.pool === 'goose' && st.hasMarket) {
     money += '<div class="acc-sub">成本 ' + fmtMoney(st.cost) + ' · 市值 ' + fmtMoney(st.market) +
       ' · <b class="' + (st.profit >= 0 ? 'up' : 'down') + '">' + fmtMoney(st.profit, { sign: st.profit > 0 }) +
@@ -461,17 +462,50 @@ function accountCard(a, t) {
   return '<div class="acc-card' + (a.archived ? ' archived' : '') + '">' +
     '<div class="acc-top">' +
       '<div class="acc-name">' + esc(a.name) + '</div>' +
+      (poolId && poolId !== a.pool ? '<span class="tag">共用账户</span>' : '') +
       '<span class="tag">' + esc(typeName(a.type)) + '</span>' +
     '</div>' +
     money +
     (a.note ? '<div class="acc-note">' + esc(a.note) + '</div>' : '') +
     '<div class="acc-actions">' +
+      (poolId && poolId !== a.pool ? '<button class="btn ghost small" data-act="unlink-pool-acc" data-id="' + esc(a.id) + '" data-pool="' + esc(poolId) + '">移出此池</button>' : '') +
       (a.pool === 'goose' ? '<button class="btn ghost small" data-act="valuation" data-id="' + esc(a.id) + '">更新市值</button>' : '') +
       '<button class="btn ghost small" data-act="edit-acc" data-id="' + esc(a.id) + '">编辑</button>' +
       '<button class="btn ghost small" data-act="archive-acc" data-id="' + esc(a.id) + '">' + (a.archived ? '恢复' : '归档') + '</button>' +
       '<button class="btn ghost small danger" data-act="del-acc" data-id="' + esc(a.id) + '">删除</button>' +
     '</div>' +
   '</div>';
+}
+
+function openPoolAccountPicker(poolId, goalId) {
+  const attrs = ' data-pool="' + esc(poolId) + '" data-goal="' + esc(goalId || '') + '"';
+  openModal('给「' + poolById(poolId).name + '」添加账户',
+    '<p>选择已有账户时，余额和流水共用，总资产只计算一次。</p>' +
+    '<button class="btn primary" data-act="link-pool-acc"' + attrs + '>选择已有账户</button> ' +
+    '<button class="btn ghost" data-act="add-acc"' + attrs + '>新建账户</button>',
+    { okText: '关闭' });
+  $('#modalOk').onclick = closeModal;
+}
+
+function openPoolAccountForm(poolId, goalId) {
+  const accounts = (S.accounts || []).filter(a => !a.archived);
+  if (!accounts.length) { openAccountForm(null, { pool: poolId, goalId }); return; }
+  openForm({
+    title: '添加已有账户到「' + poolById(poolId).name + '」',
+    values: { accountId: accounts[0].id, goalId: goalId || '' },
+    fields: [
+      { name: 'accountId', label: '选择账户', type: 'select', required: true,
+        options: accounts.map(a => ({ value: a.id, label: a.name + '（' + fmtMoney(accountValue(a)) + '）' })),
+        hint: '余额和流水与原账户共用，重复添加不会增加总资产。' },
+      { name: 'goalId', label: '关联目标', type: 'select', hidden: poolId !== 'goal',
+        options: [{ value: '', label: '不关联目标' }].concat((S.goals || []).map(g => ({ value: g.id, label: g.name }))) }
+    ],
+    onSubmit: async out => {
+      await mutateReq('POST', '/accounts/' + out.accountId + '/pools', { pool: poolId, goalId: out.goalId || null });
+      render();
+      toast('账户已加入，总资产不变');
+    }
+  });
 }
 
 function openAccountForm(acc, preset) {
@@ -1259,7 +1293,7 @@ function applyBulk(field, srcId) {
 function viewReports() {
   const r = ui.report;
   const accOptions = [{ value: 'all', label: '全部账户' }].concat(
-    (S.accounts || []).filter(a => r.poolId === 'all' || a.pool === r.poolId)
+    (S.accounts || []).filter(a => r.poolId === 'all' || accountInPool(a, r.poolId))
       .map(a => ({ value: a.id, label: poolById(a.pool).name + ' · ' + a.name }))
   );
 
@@ -1571,6 +1605,14 @@ document.addEventListener('click', async (e) => {
       return;
     }
 
+    if (act === 'add-pool-acc') { openPoolAccountPicker(btn.dataset.pool, btn.dataset.goal); return; }
+    if (act === 'link-pool-acc') { openPoolAccountForm(btn.dataset.pool, btn.dataset.goal); return; }
+    if (act === 'unlink-pool-acc') {
+      await mutateReq('DELETE', '/accounts/' + id + '/pools', { pool: btn.dataset.pool });
+      render();
+      toast('已移出此池，总资产不变');
+      return;
+    }
     if (act === 'add-acc') {
       openAccountForm(null, { pool: btn.dataset.pool || (ui.tab === 'accounts' ? undefined : 'cash'), goalId: btn.dataset.goal || '' });
       return;

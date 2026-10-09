@@ -127,6 +127,15 @@ function ensureState(raw) {
     if (!Array.isArray(a.valuations)) a.valuations = [];
     if (a.archived !== true) a.archived = false;
     if (typeof a.openingBalance !== 'number' || !Number.isInteger(a.openingBalance)) a.openingBalance = 0;
+    const linkedPools = new Set();
+    a.poolLinks = (Array.isArray(a.poolLinks) ? a.poolLinks : []).filter(link => {
+      if (!link || link.pool === a.pool || !POOLS.some(p => p.id === link.pool) || linkedPools.has(link.pool)) return false;
+      linkedPools.add(link.pool);
+      return true;
+    }).map(link => ({
+      pool: link.pool,
+      goalId: link.pool === 'goal' && s.goals.some(g => g.id === link.goalId) ? link.goalId : null
+    }));
   });
   return s;
 }
@@ -834,6 +843,34 @@ async function handleApi(req, res, url) {
   /* -------------------------------------------------------------- accounts */
 
   if (r0 === 'accounts') {
+    if (method === 'POST' && r1 && r2 === 'pools') {
+      const body = await readBody(req);
+      const state = mutate(s => {
+        const a = pickAccount(s, r1);
+        if (a.archived) fail('请先恢复这个账户');
+        if (!POOLS.some(p => p.id === body.pool)) fail('请选择正确的账户池');
+        const goalId = body.goalId || null;
+        if (goalId && (body.pool !== 'goal' || !s.goals.some(g => g.id === goalId))) fail('请选择正确的目标');
+        if (a.pool === body.pool) {
+          if (body.pool === 'goal') a.goalId = goalId;
+        } else {
+          a.poolLinks = (a.poolLinks || []).filter(link => link.pool !== body.pool);
+          a.poolLinks.push({ pool: body.pool, goalId });
+        }
+      });
+      return sendJson(res, 200, { ok: true, state: withMeta(state) });
+    }
+
+    if (method === 'DELETE' && r1 && r2 === 'pools') {
+      const body = await readBody(req);
+      const state = mutate(s => {
+        const a = pickAccount(s, r1);
+        if (a.pool === body.pool) fail('这是账户的主要池，请通过编辑账户修改');
+        a.poolLinks = (a.poolLinks || []).filter(link => link.pool !== body.pool);
+      });
+      return sendJson(res, 200, { ok: true, state: withMeta(state) });
+    }
+
     if (method === 'POST' && !r1) {
       const body = await readBody(req);
       const state = mutate(s => {
@@ -866,6 +903,7 @@ async function handleApi(req, res, url) {
       const state = mutate(s => {
         const a = pickAccount(s, r1);
         Object.assign(a, normAccountInput(s, body, a));
+        a.poolLinks = (a.poolLinks || []).filter(link => link.pool !== a.pool);
         if (body.archived !== undefined) a.archived = !!body.archived;
       });
       return sendJson(res, 200, { ok: true, state: withMeta(state) });
@@ -929,9 +967,12 @@ async function handleApi(req, res, url) {
       const state = mutate(s => {
         const g = s.goals.find(x => x.id === r1);
         if (!g) fail('目标不存在', 404);
-        const used = s.accounts.some(a => a.goalId === g.id && !a.archived);
+        const used = s.accounts.some(a => (a.goalId === g.id || (a.poolLinks || []).some(link => link.goalId === g.id)) && !a.archived);
         if (used) fail('这个目标下面还有账户，请先把账户移到别的目标或归档。');
-        s.accounts.forEach(a => { if (a.goalId === g.id) a.goalId = null; });
+        s.accounts.forEach(a => {
+          if (a.goalId === g.id) a.goalId = null;
+          (a.poolLinks || []).forEach(link => { if (link.goalId === g.id) link.goalId = null; });
+        });
         s.transactions.forEach(t => { if (t.goalId === g.id) t.goalId = null; });
         s.goals.splice(s.goals.indexOf(g), 1);
       });
