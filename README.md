@@ -134,9 +134,11 @@ tools/安装识别引擎.bat  换电脑后重装识别引擎
 
 ```
 node tools/selftest.js
+node tools/form-selftest.js
 ```
 
 它会检查余额、调拨、目标进度、市值盈亏、报表这些计算是否自洽（全部通过会显示「通过 N 项，失败 0 项」）。
+金额表单回归测试还会检查编辑后保存、修改金额及表单重绘时金额是否保持正确。
 加上 `--state data/finance.json` 还可以顺便体检你的真实数据：
 
 ```

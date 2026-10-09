@@ -91,8 +91,9 @@ function openForm(cfg) {
       if (f.type === 'checkbox') {
         v = !!v;
       } else if (f.type === 'money') {
-        v = parseMoney(v);
-        if (isNaN(v)) return showModalError('「' + f.label + '」请填写正确的金额');
+        // 初始数字已经是分；用户输入的字符串才需要从元转换成分。
+        v = typeof v === 'number' ? Math.round(v) : parseMoney(v);
+        if (!Number.isFinite(v)) return showModalError('「' + f.label + '」请填写正确的金额');
       } else if (f.type === 'number') {
         v = Number(v);
         if (!isFinite(v)) return showModalError('「' + f.label + '」请填写正确的数字');
