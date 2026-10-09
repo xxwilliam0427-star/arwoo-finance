@@ -73,16 +73,18 @@ function viewOverview() {
   const assets = assetSeries(12, month);
 
   return '' +
+  '<section class="overview-heading"><div><div class="eyebrow">YOUR FINANCIAL SPACE</div><h1>每一笔积累，都值得看见<span>✦</span></h1><p>掌握当下的收支，靠近未来的目标。</p></div><span class="date-pill">' + esc(t.replace(/-/g, ' / ')) + '</span></section>' +
+  '<section class="asset-hero"><div class="hero-copy"><span class="hero-kicker"><i></i> 我的总资产</span><div class="hero-amount">' + fmtMoney(total) + '</div><p>所有账户统一统计 · 共用账户只计算一次</p><div class="hero-actions"><button class="btn hero-button" data-act="go" data-tab="accounts">管理我的账户 <span>↗</span></button><button class="hero-link" data-act="go" data-tab="reports">查看资产报表 →</button></div></div><div class="asset-orbit" aria-hidden="true"><div class="orbit-ring ring-one"></div><div class="orbit-ring ring-two"></div><div class="orbit-core"><span>✦</span></div><span class="orbit-chip chip-one">日常现金</span><span class="orbit-chip chip-two">目标储蓄</span><span class="orbit-chip chip-three">长期投资</span><i class="orbit-dot dot-one"></i><i class="orbit-dot dot-two"></i></div></section>' +
   '<section class="stat-row">' +
-    statCard('总资产', fmtMoney(total), '三个池子加起来') +
     statCard('本月收入', fmtMoney(ms.income), monthLabel(month), 'good') +
     statCard('本月支出', fmtMoney(ms.expense), monthLabel(month), 'bad') +
     statCard('本月结余', fmtMoney(ms.net, { sign: ms.net > 0 }), ms.net >= 0 ? '这个月存下来这么多' : '这个月花超了', ms.net >= 0 ? 'good' : 'bad') +
+    statCard('管理中的账户', (S.accounts || []).filter(a => !a.archived).length + '<span class="stat-unit"> 个</span>', '跨池共用，统一管理', 'neutral') +
   '</section>' +
 
   '<section class="grid-2">' +
     '<div class="card">' +
-      '<div class="card-head"><h2>三个池子</h2><button class="btn ghost small" data-act="go" data-tab="accounts">管理账户</button></div>' +
+      '<div class="card-head"><h2>资金的三个方向</h2><button class="btn ghost small" data-act="go" data-tab="accounts">管理账户 ↗</button></div><p class="section-note">日常、目标与未来。共用账户在各池中展示。</p>' +
       '<ul class="pool-list">' +
         poolList.map(x =>
           '<li>' +
@@ -1540,10 +1542,17 @@ async function loadBackupList() {
 /* ============================================================ 渲染入口 */
 
 function render() {
-  $$('#nav .tab').forEach(b => b.classList.toggle('active', b.dataset.tab === ui.tab));
+  $$('#nav .tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === ui.tab);
+    if (b.dataset.tab === ui.tab) b.setAttribute('aria-current', 'page');
+    else b.removeAttribute('aria-current');
+  });
+  const pageLabel = $('#pageLabel');
+  if (pageLabel) pageLabel.textContent = { overview: '总览', ledger: '记账', import: '截图导入', accounts: '账户', reports: '报表', settings: '设置' }[ui.tab];
   renderTop();
 
   const view = $('#view');
+  view.dataset.page = ui.tab;
   if (ui.tab === 'overview') view.innerHTML = viewOverview();
   else if (ui.tab === 'ledger') { view.innerHTML = viewLedger(); bindLedgerFilters(); updateLedger(); }
   else if (ui.tab === 'import') {

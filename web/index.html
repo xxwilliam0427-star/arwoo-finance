@@ -5,36 +5,46 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Arwoo 财务助手</title>
 <link rel="stylesheet" href="styles.css">
+<link rel="stylesheet" href="studio.css">
 </head>
 <body>
 
-<header class="topbar">
+<aside class="topbar" aria-label="应用导航">
   <div class="brand">
-    <div class="logo">🐣</div>
+    <div class="logo" aria-hidden="true">a<span>✦</span></div>
     <div>
-      <div class="brand-name">Arwoo 财务助手</div>
-      <div class="brand-sub">三池记账 · 分板块报表</div>
+      <div class="brand-name">Arwoo<span class="brand-dot">.</span></div>
+      <div class="brand-sub">让每一笔钱，都有方向</div>
     </div>
   </div>
 
-  <div class="topnet" id="topAssets"></div>
-
-  <nav class="tabs" id="nav">
-    <button class="tab" data-tab="overview">总览</button>
-    <button class="tab" data-tab="ledger">记账</button>
-    <button class="tab" data-tab="import">截图导入</button>
-    <button class="tab" data-tab="accounts">账户</button>
-    <button class="tab" data-tab="reports">报表</button>
-    <button class="tab" data-tab="settings">设置</button>
+  <div class="nav-caption">我的财务空间</div>
+  <nav class="tabs" id="nav" aria-label="主导航">
+    <button class="tab" data-tab="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg><span>总览</span><span class="nav-arrow">›</span></button>
+    <button class="tab" data-tab="ledger"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 8h8M8 12h8M8 16h4"/></svg><span>记账</span><span class="nav-arrow">›</span></button>
+    <button class="tab" data-tab="import"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4"/><path d="m3 16 5-5 5 5 3-3 5 5M15 7h.01"/></svg><span>截图导入</span><span class="nav-arrow">›</span></button>
+    <button class="tab" data-tab="accounts"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 7V5a2 2 0 0 0-2-2H6a3 3 0 0 0 0 6h14v12H6a3 3 0 0 1-3-3V6"/><path d="M20 12h-5v5h5M16 14.5h.01"/></svg><span>账户</span><span class="nav-arrow">›</span></button>
+    <button class="tab" data-tab="reports"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h17M7 16v-5M12 16V4M17 16V8"/></svg><span>报表</span><span class="nav-arrow">›</span></button>
+    <button class="tab" data-tab="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></svg><span>设置</span><span class="nav-arrow">›</span></button>
   </nav>
-</header>
+  <div class="sidebar-note"><div class="local-light"></div><div><strong>本地财务空间</strong><span>数据由你掌握</span></div><span class="sidebar-spark">✧</span></div>
+  <div class="sidebar-footer">ARWOO FINANCE <span>个人财务助手</span></div>
+</aside>
 
-<main id="view"></main>
+<div class="workspace">
+  <header class="workspace-header">
+    <div class="breadcrumb">我的空间 <span>/</span> <strong id="pageLabel">总览</strong></div>
+    <div class="header-actions"><span class="local-status"><i></i> 本地保存</span><button class="btn primary" data-act="add-tx">＋ 记一笔</button></div>
+  </header>
+  <div class="topnet" id="topAssets"></div>
+  <main id="view"></main>
+  <footer class="workspace-footer">从容管理，稳步积累。<span>Arwoo · 你的个人财务空间</span></footer>
+</div>
 
 <div class="loading" id="loading">正在读取数据…</div>
 <div class="toast hidden" id="toast"></div>
 
-<div class="modal hidden" id="modal">
+<div class="modal hidden" id="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
   <div class="modal-card">
     <div class="modal-head">
       <h3 id="modalTitle">标题</h3>
