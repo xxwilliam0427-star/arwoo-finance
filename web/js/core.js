@@ -161,12 +161,12 @@ function accountsOfGoal(goalId, includeArchived) {
  * 账户的资金净流入 = Σ收入 − Σ支出 + Σ调入 − Σ调出 ± 校准差额
  * afterDate 传日期时只算「该日期之后」的流水；upto 传日期时只算「该日期（含）之前」的流水。
  */
-function accountFlowSum(acc, afterDate, upto) {
+function accountFlowSum(acc, afterDate, upto, includeAfterDate) {
   let sum = 0;
   const txs = S.transactions || [];
   for (let i = 0; i < txs.length; i++) {
     const t = txs[i];
-    if (afterDate && t.date <= afterDate) continue;
+    if (afterDate && (t.date < afterDate || (!includeAfterDate && t.date === afterDate))) continue;
     if (upto && t.date > upto) continue;
     if (t.accountId === acc.id) {
       if (t.type === 'income') sum += t.amount;
@@ -194,6 +194,13 @@ function latestValuation(acc, upto) {
   return list[list.length - 1];
 }
 
+function valuationFlowSince(acc, valuation, upto) {
+  const later = accountFlowSum(acc, valuation.date, upto);
+  // 市值包含保存时已有的当日流水，之后新增、修改、删除的差额仍需计入。
+  if (!Number.isInteger(valuation.flowOnDate)) return later;
+  return later + accountFlowSum(acc, valuation.date, valuation.date, true) - valuation.flowOnDate;
+}
+
 /**
  * 账户口径价值：
  * - 金鹅池：以最近一次填写的市值为锚点，再加上锚点之后又投进去/取出来的钱，
@@ -203,7 +210,7 @@ function latestValuation(acc, upto) {
 function accountValue(acc, upto) {
   if (acc.pool === 'goose') {
     const v = latestValuation(acc, upto);
-    if (v) return v.value + accountFlowSum(acc, v.date, upto);
+    if (v) return v.value + valuationFlowSince(acc, v, upto);
   }
   return accountCostBalance(acc, upto);
 }
@@ -212,7 +219,7 @@ function accountValue(acc, upto) {
 function accountStat(acc, upto) {
   const cost = accountCostBalance(acc, upto);
   const v = latestValuation(acc, upto);
-  const added = v ? accountFlowSum(acc, v.date, upto) : 0;
+  const added = v ? valuationFlowSince(acc, v, upto) : 0;
   const hasMarket = !!v;
   const market = hasMarket ? v.value + added : cost;
   return {

@@ -112,6 +112,17 @@ function defaultState() {
   };
 }
 
+function accountFlowOnDate(state, accountId, date) {
+  return state.transactions.reduce((sum, t) => {
+    if (t.date !== date) return sum;
+    if (t.accountId === accountId) {
+      if (t.type === 'income' || t.type === 'adjust') return sum + t.amount;
+      if (t.type === 'expense' || t.type === 'transfer') return sum - t.amount;
+    } else if (t.type === 'transfer' && t.toAccountId === accountId) return sum + t.amount;
+    return sum;
+  }, 0);
+}
+
 function ensureState(raw) {
   const base = defaultState();
   if (!raw || typeof raw !== 'object') return base;
@@ -125,6 +136,10 @@ function ensureState(raw) {
   };
   s.accounts.forEach(a => {
     if (!Array.isArray(a.valuations)) a.valuations = [];
+    // 旧备份没有当日流水快照：保持原有市值口径，并在下次写入前固定基线。
+    a.valuations.forEach(v => {
+      if (!Number.isInteger(v.flowOnDate)) v.flowOnDate = accountFlowOnDate(s, a.id, v.date);
+    });
     if (a.archived !== true) a.archived = false;
     if (typeof a.openingBalance !== 'number' || !Number.isInteger(a.openingBalance)) a.openingBalance = 0;
     const linkedPools = new Set();
@@ -892,7 +907,7 @@ async function handleApi(req, res, url) {
         a.marketValue = body.marketValue;
         a.marketValueDate = date;
         a.valuations = (a.valuations || []).filter(v => v.date !== date);
-        a.valuations.push({ date: date, value: body.marketValue });
+        a.valuations.push({ date: date, value: body.marketValue, flowOnDate: accountFlowOnDate(s, a.id, date) });
         a.valuations.sort((x, y) => x.date.localeCompare(y.date));
       });
       return sendJson(res, 200, { ok: true, state: withMeta(state) });
