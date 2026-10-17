@@ -13,6 +13,66 @@ const ui = {
   importSeq: 0
 };
 
+/* ============================================================ 浏览器导航 */
+
+const APP_TABS = ['overview', 'ledger', 'import', 'accounts', 'reports', 'settings'];
+let navigationReady = false;
+
+function navigationSnapshot() {
+  return { version: 1, tab: ui.tab, ledger: { ...ui.ledger }, report: { ...ui.report }, scrollY: window.scrollY };
+}
+
+function saveNavigation() {
+  if (!navigationReady) return;
+  window.history.replaceState({ ...window.history.state, arwoo: navigationSnapshot() }, '', '#' + ui.tab);
+}
+
+function restoreNavigation(snapshot) {
+  if (!snapshot || snapshot.version !== 1 || !APP_TABS.includes(snapshot.tab)) return false;
+  ui.tab = snapshot.tab;
+  for (const name of ['ledger', 'report']) {
+    const defaults = name === 'ledger'
+      ? { from: thisMonthKey() + '-01', to: todayIso(), type: '', categoryId: '', accountId: '', poolId: 'all', keyword: '' }
+      : { month: thisMonthKey(), poolId: 'all', accountId: 'all' };
+    for (const key of Object.keys(defaults)) {
+      if (typeof snapshot[name]?.[key] === 'string') defaults[key] = snapshot[name][key];
+    }
+    ui[name] = defaults;
+  }
+  return true;
+}
+
+function initializeNavigation() {
+  if (navigationReady) return;
+  const tab = window.location.hash.slice(1);
+  if (!restoreNavigation(window.history.state?.arwoo) && APP_TABS.includes(tab)) ui.tab = tab;
+  navigationReady = true;
+  window.history.scrollRestoration = 'manual';
+  saveNavigation();
+  window.addEventListener('popstate', event => {
+    const snapshot = event.state?.arwoo;
+    if (!restoreNavigation(snapshot)) {
+      const target = window.location.hash.slice(1);
+      ui.tab = APP_TABS.includes(target) ? target : 'overview';
+    }
+    closeModal();
+    render();
+    window.requestAnimationFrame(() => window.scrollTo({ top: Math.max(0, Number(snapshot?.scrollY) || 0), behavior: 'instant' }));
+  });
+}
+
+function navigateTo(tab, ledger) {
+  if (!APP_TABS.includes(tab) || (ui.tab === tab && !ledger)) return;
+  saveNavigation();
+  ui.tab = tab;
+  if (ledger) ui.ledger = ledger;
+  if (navigationReady) {
+    window.history.pushState({ arwoo: { ...navigationSnapshot(), scrollY: 0 } }, '', '#' + tab);
+  }
+  render();
+  if (navigationReady) window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
 /* ============================================================ 公共片段 */
 
 function statCard(label, value, sub, cls) {
@@ -203,6 +263,7 @@ function bindLedgerFilters() {
     el.addEventListener(ev, () => {
       ui.ledger[map[id]] = el.value;
       updateLedger();
+      saveNavigation();
     });
   });
   $('#fCat').value = ui.ledger.categoryId;
@@ -1579,6 +1640,7 @@ function bindReportFilters() {
       ui.report[key] = el.value;
       if (key === 'poolId') ui.report.accountId = 'all';
       render();
+      saveNavigation();
     });
   };
   bind('rMonth', 'month');
@@ -1589,21 +1651,19 @@ function bindReportFilters() {
 /* ============================================================ 事件 */
 
 function openCategoryRecords(data) {
-  ui.ledger = {
+  const ledger = {
     from: data.month + '-01', to: monthEndIso(data.month), type: data.kind,
     categoryId: data.categoryId, accountId: data.accountId === 'all' ? '' : (data.accountId || ''),
     poolId: data.poolId || 'all', keyword: ''
   };
-  ui.tab = 'ledger';
-  render();
+  navigateTo('ledger', ledger);
   $('#view').scrollIntoView({ behavior: 'instant', block: 'start' });
 }
 
 document.addEventListener('click', async (e) => {
   const navBtn = e.target.closest('#nav .tab');
   if (navBtn) {
-    ui.tab = navBtn.dataset.tab;
-    render();
+    navigateTo(navBtn.dataset.tab);
     return;
   }
 
@@ -1613,7 +1673,7 @@ document.addEventListener('click', async (e) => {
   const id = btn.dataset.id;
 
   try {
-    if (act === 'go') { ui.tab = btn.dataset.tab; render(); return; }
+    if (act === 'go') { navigateTo(btn.dataset.tab); return; }
     if (act === 'category-records') { openCategoryRecords(btn.dataset); return; }
 
     if (act === 'add-tx') { openTxForm(null); return; }
@@ -1678,6 +1738,7 @@ document.addEventListener('click', async (e) => {
     if (act === 'reset-filter') {
       ui.ledger = { from: '', to: '', type: '', categoryId: '', accountId: '', poolId: 'all', keyword: '' };
       render();
+      saveNavigation();
       return;
     }
 
@@ -1916,6 +1977,7 @@ function exportCsv() {
 (async function boot() {
   try {
     await refresh();
+    initializeNavigation();
     $('#loading').classList.add('hidden');
     render();
   } catch (e) {
