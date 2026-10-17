@@ -138,6 +138,7 @@ node tools/selftest.js
 node tools/form-selftest.js
 node tools/pool-selftest.js
 node tools/valuation-selftest.js
+node tools/chart-selftest.js
 ```
 
 它会检查余额、调拨、目标进度、市值盈亏、报表这些计算是否自洽（全部通过会显示「通过 N 项，失败 0 项」）。

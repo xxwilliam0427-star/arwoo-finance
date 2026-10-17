@@ -277,7 +277,7 @@ function filterTransactions(f) {
     if (f.from && t.date < f.from) return false;
     if (f.to && t.date > f.to) return false;
     if (f.type && t.type !== f.type) return false;
-    if (f.categoryId && t.categoryId !== f.categoryId) return false;
+    if (f.categoryId && (f.categoryId === '__none__' ? !!t.categoryId : t.categoryId !== f.categoryId)) return false;
     if (f.accountId) {
       if (t.accountId !== f.accountId && t.toAccountId !== f.accountId) return false;
     }

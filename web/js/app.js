@@ -4,7 +4,7 @@
 
 const ui = {
   tab: 'overview',
-  ledger: { from: thisMonthKey() + '-01', to: todayIso(), type: '', categoryId: '', accountId: '', keyword: '' },
+  ledger: { from: thisMonthKey() + '-01', to: todayIso(), type: '', categoryId: '', accountId: '', poolId: 'all', keyword: '' },
   report: { month: thisMonthKey(), poolId: 'all', accountId: 'all' },
   hideArchived: true,
   importItems: [],
@@ -119,8 +119,8 @@ function viewOverview() {
     '<div class="card">' +
       '<div class="card-head"><h2>' + monthLabel(month) + ' 支出构成</h2><button class="btn ghost small" data-act="go" data-tab="reports">完整报表</button></div>' +
       (expenseCats.length
-        ? '<div class="donut-wrap">' + donutChart(expenseCats.slice(0, 8), { centerTitle: '本月支出', centerValue: fmtMoney(expenseTotal), size: 190 }) +
-          '<div class="legend-wrap">' + legendList(expenseCats.slice(0, 8), expenseTotal) + '</div></div>'
+        ? '<div class="donut-wrap">' + donutChart(expenseCats, { centerTitle: '本月支出', centerValue: fmtMoney(expenseTotal), size: 190, drilldown: { month, kind: 'expense' } }) +
+          '<div class="legend-wrap">' + legendList(expenseCats, expenseTotal) + '</div></div>'
         : '<div class="chart-empty">这个月还没有支出记录</div>') +
     '</div>' +
     '<div class="card">' +
@@ -156,6 +156,7 @@ function recentList(n) {
 function viewLedger() {
   const f = ui.ledger;
   const catOptions = '<option value="">全部分类</option>' +
+    '<option value="__none__">未分类</option>' +
     categoriesOf('expense').map(c => '<option value="' + esc(c.id) + '">支出 · ' + esc(c.name) + '</option>').join('') +
     categoriesOf('income').map(c => '<option value="' + esc(c.id) + '">收入 · ' + esc(c.name) + '</option>').join('');
   const accOptions = '<option value="">全部账户</option>' +
@@ -183,6 +184,7 @@ function viewLedger() {
       '</select></label>' +
       '<label class="mini"><span>分类</span><select id="fCat">' + catOptions + '</select></label>' +
       '<label class="mini"><span>账户</span><select id="fAcc">' + accOptions + '</select></label>' +
+      '<label class="mini"><span>账户池</span><select id="fPool"><option value="all">全部池子</option>' + pools().map(p => '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>').join('') + '</select></label>' +
       '<label class="mini grow"><span>搜索</span><input type="text" id="fKw" placeholder="备注 / 账户 / 分类" value="' + esc(f.keyword) + '"></label>' +
       '<button class="btn ghost small" data-act="reset-filter">重置</button>' +
     '</div>' +
@@ -193,7 +195,7 @@ function viewLedger() {
 }
 
 function bindLedgerFilters() {
-  const map = { fFrom: 'from', fTo: 'to', fType: 'type', fCat: 'categoryId', fAcc: 'accountId', fKw: 'keyword' };
+  const map = { fFrom: 'from', fTo: 'to', fType: 'type', fCat: 'categoryId', fAcc: 'accountId', fPool: 'poolId', fKw: 'keyword' };
   Object.keys(map).forEach(id => {
     const el = document.getElementById(id);
     if (!el) return;
@@ -205,6 +207,7 @@ function bindLedgerFilters() {
   });
   $('#fCat').value = ui.ledger.categoryId;
   $('#fAcc').value = ui.ledger.accountId;
+  $('#fPool').value = ui.ledger.poolId || 'all';
 }
 
 function updateLedger() {
@@ -1342,13 +1345,13 @@ function updateReport() {
     '<section class="grid-2">' +
       '<div class="card"><div class="card-head"><h2>支出分类占比</h2><span class="muted">' + monthLabel(r.month) + '</span></div>' +
         (expenseTotal
-          ? '<div class="donut-wrap">' + donutChart(expenseCats, { centerTitle: '支出', centerValue: fmtMoney(expenseTotal) }) +
+          ? '<div class="donut-wrap">' + donutChart(expenseCats, { centerTitle: '支出', centerValue: fmtMoney(expenseTotal), drilldown: { ...f, month: r.month, kind: 'expense' } }) +
             '<div class="legend-wrap">' + legendList(expenseCats, expenseTotal) + '</div></div>'
           : '<div class="chart-empty">这个月没有支出</div>') +
       '</div>' +
       '<div class="card"><div class="card-head"><h2>收入分类占比</h2><span class="muted">' + monthLabel(r.month) + '</span></div>' +
         (incomeTotal
-          ? '<div class="donut-wrap">' + donutChart(incomeCats, { centerTitle: '收入', centerValue: fmtMoney(incomeTotal) }) +
+          ? '<div class="donut-wrap">' + donutChart(incomeCats, { centerTitle: '收入', centerValue: fmtMoney(incomeTotal), drilldown: { ...f, month: r.month, kind: 'income' } }) +
             '<div class="legend-wrap">' + legendList(incomeCats, incomeTotal) + '</div></div>'
           : '<div class="chart-empty">这个月没有收入</div>') +
       '</div>' +
@@ -1585,6 +1588,17 @@ function bindReportFilters() {
 
 /* ============================================================ 事件 */
 
+function openCategoryRecords(data) {
+  ui.ledger = {
+    from: data.month + '-01', to: monthEndIso(data.month), type: data.kind,
+    categoryId: data.categoryId, accountId: data.accountId === 'all' ? '' : (data.accountId || ''),
+    poolId: data.poolId || 'all', keyword: ''
+  };
+  ui.tab = 'ledger';
+  render();
+  $('#view').scrollIntoView({ behavior: 'instant', block: 'start' });
+}
+
 document.addEventListener('click', async (e) => {
   const navBtn = e.target.closest('#nav .tab');
   if (navBtn) {
@@ -1600,6 +1614,7 @@ document.addEventListener('click', async (e) => {
 
   try {
     if (act === 'go') { ui.tab = btn.dataset.tab; render(); return; }
+    if (act === 'category-records') { openCategoryRecords(btn.dataset); return; }
 
     if (act === 'add-tx') { openTxForm(null); return; }
     if (act === 'edit-tx') { openTxForm((S.transactions || []).find(t => t.id === id)); return; }
@@ -1661,7 +1676,7 @@ document.addEventListener('click', async (e) => {
     }
 
     if (act === 'reset-filter') {
-      ui.ledger = { from: '', to: '', type: '', categoryId: '', accountId: '', keyword: '' };
+      ui.ledger = { from: '', to: '', type: '', categoryId: '', accountId: '', poolId: 'all', keyword: '' };
       render();
       return;
     }

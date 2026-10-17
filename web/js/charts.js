@@ -45,18 +45,26 @@ function donutChart(items, opts) {
   }
 
   let parts = '';
+  function segment(it, shape) {
+    const percent = (it.value / total * 100).toFixed(1) + '%';
+    const drill = o.drilldown;
+    const attrs = drill ? ' data-act="category-records" data-category-id="' + esc(it.id) +
+      '" data-month="' + esc(drill.month) + '" data-kind="' + esc(drill.kind) +
+      '" data-pool-id="' + esc(drill.poolId || 'all') + '" data-account-id="' + esc(drill.accountId || 'all') + '"' : '';
+    return '<g class="donut-segment" tabindex="0" role="' + (drill ? 'button' : 'img') + '" aria-label="' +
+      esc(it.label + '，' + fmtMoney(it.value) + '，占比 ' + percent + (drill ? '，查看对应流水' : '')) +
+      '" data-label="' + esc(it.label) + '" data-money="' + esc(fmtMoney(it.value)) + '" data-percent="' + percent + '"' + attrs + '>' + shape + '</g>';
+  }
   if (items.length === 1) {
     const rMid = (rOut + rIn) / 2;
-    parts = '<circle cx="' + cx + '" cy="' + cy + '" r="' + rMid.toFixed(2) + '" fill="none" stroke="' +
-      items[0].color + '" stroke-width="' + (rOut - rIn) + '">' +
-      '<title>' + esc(items[0].label) + ' ' + fmtMoney(items[0].value) + '</title></circle>';
+    parts = segment(items[0], '<circle cx="' + cx + '" cy="' + cy + '" r="' + rMid.toFixed(2) + '" fill="none" stroke="' +
+      esc(items[0].color) + '" stroke-width="' + (rOut - rIn) + '"/>');
   } else {
     let angle = 0;
     items.forEach(it => {
       const span = (it.value / total) * Math.PI * 2;
       const d = donutPath(cx, cy, rOut, rIn, angle, angle + span);
-      parts += '<path d="' + d + '" fill="' + it.color + '" stroke="#fff" stroke-width="1.5">' +
-        '<title>' + esc(it.label) + ' ' + fmtMoney(it.value) + '（' + (it.value / total * 100).toFixed(1) + '%）</title></path>';
+      parts += segment(it, '<path d="' + d + '" fill="' + esc(it.color) + '" stroke="#fff" stroke-width="1.5"/>');
       angle += span;
     });
   }
@@ -64,12 +72,60 @@ function donutChart(items, opts) {
   const centerTitle = o.centerTitle || '合计';
   const centerValue = o.centerValue || fmtMoney(total);
 
-  return '<svg class="chart-svg" viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" role="img">' +
+  return '<div class="donut-chart" style="--donut-size:' + size + 'px"><svg class="chart-svg donut-svg" viewBox="0 0 ' + size + ' ' + size + '" width="' + size + '" height="' + size + '" role="group" aria-label="' + esc(centerTitle + '分类占比') + '">' +
     parts +
-    '<text x="' + cx + '" y="' + (cy - 4) + '" text-anchor="middle" class="ch-center-label">' + esc(centerTitle) + '</text>' +
-    '<text x="' + cx + '" y="' + (cy + 20) + '" text-anchor="middle" class="ch-center-value">' + esc(centerValue) + '</text>' +
-    '</svg>';
+    '<text x="' + cx + '" y="' + (cy - 16) + '" text-anchor="middle" class="ch-center-label" data-default="' + esc(centerTitle) + '">' + esc(centerTitle) + '</text>' +
+    '<text x="' + cx + '" y="' + (cy + 9) + '" text-anchor="middle" class="ch-center-value" data-default="' + esc(centerValue) + '">' + esc(centerValue) + '</text>' +
+    '<text x="' + cx + '" y="' + (cy + 29) + '" text-anchor="middle" class="ch-center-percent"></text>' +
+    '</svg><div class="donut-tooltip" aria-hidden="true"><strong></strong><span></span><small>' + (o.drilldown ? '点击查看对应流水 →' : '分类金额与占比') + '</small></div></div>';
 }
+
+function highlightDonut(segment) {
+  const chart = segment.closest('.donut-chart');
+  const label = segment.dataset.label;
+  chart.classList.add('is-inspecting');
+  chart.querySelectorAll('.donut-segment').forEach(el => el.classList.toggle('is-highlighted', el === segment));
+  chart.querySelector('.ch-center-label').textContent = Array.from(label).length > 8 ? Array.from(label).slice(0, 8).join('') + '…' : label;
+  chart.querySelector('.ch-center-value').textContent = segment.dataset.money;
+  chart.querySelector('.ch-center-percent').textContent = '占比 ' + segment.dataset.percent;
+  chart.querySelector('.donut-tooltip strong').textContent = label;
+  chart.querySelector('.donut-tooltip span').textContent = segment.dataset.money + ' · ' + segment.dataset.percent;
+}
+
+function resetDonut(chart) {
+  chart.classList.remove('is-inspecting');
+  chart.querySelectorAll('.donut-segment').forEach(el => el.classList.remove('is-highlighted'));
+  chart.querySelectorAll('[data-default]').forEach(el => { el.textContent = el.dataset.default; });
+  chart.querySelector('.ch-center-percent').textContent = '';
+}
+
+document.addEventListener('pointerover', e => {
+  const segment = e.target.closest('.donut-segment');
+  if (segment) highlightDonut(segment);
+});
+document.addEventListener('pointerout', e => {
+  const segment = e.target.closest('.donut-segment');
+  if (!segment || segment.contains(e.relatedTarget)) return;
+  const chart = segment.closest('.donut-chart');
+  const focused = chart.querySelector('.donut-segment:focus');
+  if (focused) highlightDonut(focused);
+  else resetDonut(chart);
+});
+document.addEventListener('focusin', e => {
+  const segment = e.target.closest('.donut-segment');
+  if (segment) highlightDonut(segment);
+});
+document.addEventListener('focusout', e => {
+  const segment = e.target.closest('.donut-segment');
+  if (segment) resetDonut(segment.closest('.donut-chart'));
+});
+document.addEventListener('keydown', e => {
+  const segment = e.target.closest('.donut-segment[data-act]');
+  if (segment && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    segment.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  }
+});
 
 /** 分组柱状图：收入 / 支出 */
 function barsChart(data, opts) {
